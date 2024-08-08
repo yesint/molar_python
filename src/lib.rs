@@ -1,12 +1,9 @@
-use std::{ffi::c_void, rc::Rc, slice::from_raw_parts, str::FromStr, sync::Arc};
-
-use molar::core::{providers::RandomPosMutProvider, MeasureMasses, OverlappingMut};
+use std::ffi::c_void;
+use molar::prelude::*;
 use numpy::{
-    nalgebra::Const,
-    npyffi::{self, npy_intp},
-    Ix1, PyArray, PyArray1, ToNpyDims, ToPyArray, PY_ARRAY_API,
+    npyffi::{self}, PyArray1, ToNpyDims, PY_ARRAY_API,
 };
-use pyo3::{ffi::PyObject, prelude::*, types::PyTuple};
+use pyo3::prelude::*;
 
 /// Formats the sum of two numbers as string.
 #[pyfunction]
@@ -60,54 +57,52 @@ impl Particle {
 }
 
 #[pyclass]
-struct Topology(triomphe::Arc<molar::core::Topology>);
+struct Topology(Option<molar::core::Topology>);
 
 #[pyclass]
-struct TopologyU(Option<triomphe::UniqueArc<molar::core::Topology>>);
-
-#[pyclass]
-struct State(triomphe::Arc<molar::core::State>);
-
-#[pyclass]
-struct StateU(Option<triomphe::UniqueArc<molar::core::State>>);
+struct State(Option<molar::core::State>);
 
 
 #[pyclass(unsendable)]
-struct FileHandler(molar::io::FileHandler<'static>);
+struct FileHandler(molar::io::FileHandler);
 
 #[pymethods]
 impl FileHandler {
     #[staticmethod]
     fn open(fname: &str) -> PyResult<Self> {
-        Ok(FileHandler(molar::io::FileHandler::open(fname)?))
+        Ok(FileHandler(molar::io::FileHandler::open(fname).map_err(|e| anyhow::anyhow!(e))?))
     }
 
-    fn read(&mut self) -> PyResult<(TopologyU, StateU)> {
-        let (top, st) = self.0.read()?;
-        Ok((TopologyU(Some(top)), StateU(Some(st))))
+    fn read(&mut self) -> PyResult<(Topology, State)> {
+        let (top, st) = self.0.read().map_err(|e| anyhow::anyhow!(e))?;
+        Ok((Topology(Some(top)), State(Some(st))))
     }
 }
 
 #[pyclass(unsendable)]
-struct Source (molar::core::Source<molar::core::OverlappingMut>);
+struct Source (molar::core::Source<molar::core::MutableSerial>);
 
 #[pymethods]
 impl Source {
     #[new]
-    fn new_overlapping_mut(topology: &mut TopologyU, state: &mut StateU) -> PyResult<Self> {
+    fn new(topology: &mut Topology, state: &mut State) -> PyResult<Self> {
         Ok(Source(
-            molar::core::Source::<()>::new_overlapping_mut(topology.0.take().unwrap(), state.0.take().unwrap())?
+            molar::core::Source::<()>::new(topology.0.take().unwrap(), state.0.take().unwrap()).map_err(|e| anyhow::anyhow!(e))?
         ))
     }
 
     fn select_all(&mut self) -> PyResult<Sel> {
-        Ok(Sel(self.0.select_all()?))
+        Ok(Sel(self.0.select_all().map_err(|e| anyhow::anyhow!(e))?))
     }
+
+    fn select_str(&mut self, sel_str: &str) -> PyResult<Sel> {
+        Ok(Sel(self.0.select_str(sel_str).map_err(|e| anyhow::anyhow!(e))?))
+    } 
 }
 
 //====================================
 #[pyclass(unsendable)]
-struct Sel(molar::core::Sel<OverlappingMut>);
+struct Sel(molar::core::Sel<MutableSerial>);
 
 #[pymethods]
 impl Sel {
@@ -116,7 +111,7 @@ impl Sel {
     }
 
     fn com(&self, _py: Python) -> PyResult<Py<numpy::PyArray1<f32>>> {
-        Ok(copy_pos_to_pyarray(_py, &self.0.center_of_mass()?).into_py(_py))
+        Ok(copy_pos_to_pyarray(_py, &self.0.center_of_mass().map_err(|e| anyhow::anyhow!(e))?).into_py(_py))
     }
 
     fn nth_pos(&self, _py: Python, i: usize) -> Py<numpy::PyArray1<f32>> {

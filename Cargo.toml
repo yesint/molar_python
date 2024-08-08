@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = {version = "0.21", features =["anyhow"] }
-molar = {path = "../molar", version = "0.2", default-features = false}
+molar = {path = "../molar", default-features = false}
 numpy = {version = "0.21", features = ["nalgebra"]}
 triomphe = "0.1"
+anyhow = "1.0"
